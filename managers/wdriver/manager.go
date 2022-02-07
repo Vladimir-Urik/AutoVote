@@ -31,22 +31,23 @@ func CreateNewWDriver(port int) Manager {
 		}
 	}(service)*/
 
+	return Manager{
+		S: *service,
+	}
+}
+
+func (m *Manager) GetClientWebDriver(port int, proxy string, proxyPort int) selenium.WebDriver {
 	caps := selenium.Capabilities{"browserName": "firefox"}
+	caps.AddProxy(selenium.Proxy{
+		Type:      "system",
+		SOCKS:     proxy,
+		SocksPort: proxyPort,
+	})
+
 	wd, err := selenium.NewRemote(caps, fmt.Sprintf("http://localhost:%d/wd/hub", port))
 	if err != nil {
 		panic(err)
 	}
 
-	/*defer func(wd selenium.WebDriver) {
-		err := wd.Quit()
-		logger.Info(fmt.Sprintf("Quit WebDriver: %v", err))
-		if err != nil {
-			panic(err)
-		}
-	}(wd)*/
-
-	return Manager{
-		Wd: wd,
-		S:  *service,
-	}
+	return wd
 }

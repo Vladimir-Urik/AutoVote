@@ -31,18 +31,22 @@ func main() {
 	cfg := config.LoadConfigFromFile("config.json")
 	logger.Info("Config loaded")
 
+	logger.Info("Start webhook thread for logs...")
+	logger.StartWebhook(&cfg)
+	logger.Info("Webhook thread for logs started")
+
 	logger.Info("Starting captcha manager...")
 	captchaSolver := captcha.LoadCaptchaSolver(cfg.CaptchaSettings.Key)
 	logger.Info("Captcha manager started")
 
 	logger.Info("Starting CzechCraft manager...")
-	cc := czechcraft.StartCzechCraftManager(cfg.CzechCraftSettings, &captchaSolver)
+	cc := czechcraft.StartCzechCraftManager(&cfg, &captchaSolver)
 	logger.Debug("Calling CzechCraft Thread")
 	cc.StartVotingThread()
 	logger.Info("CzechCraft manager started")
 
 	logger.Info("Starting CraftList manager...")
-	cl := craftlist.StartCraftListManager(cfg.CraftListSettings, &captchaSolver)
+	cl := craftlist.StartCraftListManager(&cfg, &captchaSolver)
 	logger.Debug("Calling CraftList Thread")
 	cl.StartVotingThread()
 	logger.Info("CraftList manager started")
@@ -64,17 +68,7 @@ func main() {
 
 	<-done
 	logger.Info("Shutting down...")
-	err := cl.WebDriver.Wd.Quit()
-	if err != nil {
-		return
-	}
-
-	err = cl.WebDriver.S.Stop()
-	if err != nil {
-		return
-	}
-
-	err = cc.WebDriver.Wd.Quit()
+	err := cl.WebDriver.S.Stop()
 	if err != nil {
 		return
 	}

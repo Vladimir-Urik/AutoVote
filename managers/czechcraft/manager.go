@@ -1,22 +1,26 @@
 package czechcraft
 
 import (
+	"fmt"
 	api2captcha "github.com/2captcha/2captcha-go"
 	"github.com/Vladimir-Urik/AutoVote/logger"
 	"github.com/Vladimir-Urik/AutoVote/managers/captcha"
+	"github.com/Vladimir-Urik/AutoVote/managers/config"
 	"github.com/Vladimir-Urik/AutoVote/managers/wdriver"
 	"github.com/Vladimir-Urik/AutoVote/managers/webhook"
 	"github.com/tebeka/selenium"
 	"math/rand"
+	"strconv"
+	"strings"
 	"time"
 )
 
-func StartCzechCraftManager(settings *Settings, captcha *captcha.Manager) Manager {
+func StartCzechCraftManager(config *config.Config, captcha *captcha.Manager) Manager {
 	logger.Info("Starting CzechCraft WebDriver...")
 	wd := wdriver.CreateNewWDriver(9800)
 	logger.Info("CzechCraft WebDriver started")
 	return Manager{
-		Settings:      settings,
+		Config:        config,
 		CaptchaSolver: captcha,
 		WebDriver:     &wd,
 	}
@@ -36,10 +40,11 @@ func (m *Manager) StartVotingThread() {
 }
 
 func (m *Manager) vote() {
+	var settings = m.Config.CzechCraftSettings
 	logger.Info("CzechCraft: Solving captcha...")
 	code, err := m.CaptchaSolver.Solve(api2captcha.ReCaptcha{
-		SiteKey:   m.Settings.SiteKey,
-		Url:       "https://czech-craft.eu/server/" + m.Settings.Path + "/vote/",
+		SiteKey:   settings.SiteKey,
+		Url:       "https://czech-craft.eu/server/" + settings.Path + "/vote/",
 		Invisible: false,
 		Action:    "verify",
 	})
@@ -56,10 +61,26 @@ func (m *Manager) vote() {
 
 	logger.Info("CzechCraft: Captcha solved: " + code)
 
-	wd := m.WebDriver.Wd
+	var proxy = m.Config.Proxies[rand.Intn(len(m.Config.Proxies))]
+	if strings.Contains(proxy, ":") {
+		logger.Error("Proxy is not valid: " + proxy)
+		return
+	}
+
+	var proxyIp = strings.Split(proxy, ":")[0]
+	var proxyPort, _ = strconv.Atoi(strings.Split(proxy, ":")[1])
+
+	wd := m.WebDriver.GetClientWebDriver(9800, proxyIp, proxyPort)
+	defer func(wd selenium.WebDriver) {
+		err := wd.Quit()
+		logger.Info(fmt.Sprintf("Quit WebDriver: %v", err))
+		if err != nil {
+			panic(err)
+		}
+	}(wd)
 
 	logger.Info("CzechCraft: Opening vote page...")
-	if err := wd.Get("https://czech-craft.eu/server/" + m.Settings.Path + "/vote/"); err != nil {
+	if err := wd.Get("https://czech-craft.eu/server/" + settings.Path + "/vote/"); err != nil {
 		logger.Error("Error while getting page: " + err.Error())
 		return
 	}
@@ -77,7 +98,7 @@ func (m *Manager) vote() {
 	}
 
 	logger.Info("CzechCraft: Filling username field...")
-	err = elem.SendKeys(m.Settings.Name)
+	err = elem.SendKeys(settings.Name)
 	if err != nil {
 		logger.Error("Error while sending username: " + err.Error())
 		return
@@ -147,22 +168,21 @@ func (m *Manager) vote() {
 		return
 	}
 
-	err = wd.Quit()
 	if err != nil {
 		logger.Error("Error while quitting webdriver: " + err.Error())
 		return
 	}
 
-	logger.Info("Vote is successful! Nickname: " + m.Settings.Name + "; Path: " + m.Settings.Path + "; Page: CzechCraft")
+	logger.Info("Vote is successful! Nickname: " + settings.Name + "; Path: " + settings.Path + "; Page: CzechCraft")
 	var intColor = 5814783
 	var embeds = []webhook.Embed{
 		{
 			Title:       "Úspešné hlasovanie",
-			Description: "Nick: `" + m.Settings.Name + "`\nPath: `" + m.Settings.Path + "`\nPage: `Czech-Craft`",
+			Description: "Nick: `" + settings.Name + "`\nPath: `" + settings.Path + "`\nPage: `Czech-Craft`",
 			Color:       intColor,
 		},
 	}
-	webhook.SendDataToWebhook("", embeds, "https://canary.discord.com/api/webhooks/932305723491233913/QfRQZaU8ESOW6jPsY2x--wFyqJk8o7O11SGKSXTC5TkL6Swa9Xl12UBD-kKrBNs9W-DB")
+	webhook.SendDataToWebhook("", embeds, m.Config.VoteWebhook)
 }
 
 func (m *Manager) sleep() {
